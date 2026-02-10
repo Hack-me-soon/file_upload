@@ -1,26 +1,68 @@
-async function uploadToServer() {
-    if (!selectedFile) return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GitHub Uploader</title>
+    <style>
+        /* Your CSS stays here */
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; background: #f4f4f9; }
+        #drop-zone { width: 350px; height: 200px; border: 3px dashed #4A90E2; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: white; cursor: pointer; transition: 0.3s; }
+        #status { margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
+    <h2>Upload to Repository</h2>
+    <div id="drop-zone">Drag & Drop or Click to Select</div>
+    <input type="file" id="fileInput" hidden>
+    <p>Press <strong>Enter</strong> to save to GitHub</p>
+    <div id="status"></div>
 
-    status.innerText = "Uploading to GitHub...";
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('fileInput');
+        const status = document.getElementById('status');
+        let selectedFile = null;
 
-    try {
-        // Netlify maps functions to this specific path
-        const response = await fetch('/.netlify/functions/upload', { 
-            method: 'POST', 
-            body: formData 
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => {
+            selectedFile = e.target.files[0];
+            dropZone.innerText = `Ready: ${selectedFile.name}`;
+        };
+
+        window.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && selectedFile) {
+                uploadToServer();
+            }
         });
-        
-        const result = await response.json();
-        if (result.success) {
-            status.innerText = "Successfully saved in 'Uploaded_files'!";
-            status.style.color = "green";
-        } else {
-            status.innerText = "Error: " + result.error;
+
+        async function uploadToServer() {
+            if (!selectedFile) return;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            status.innerText = "Uploading to GitHub...";
+
+            try {
+                const response = await fetch('/.netlify/functions/upload', { 
+                    method: 'POST', 
+                    body: formData 
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    status.innerText = "✓ Successfully saved in 'Uploaded_files'!";
+                    status.style.color = "green";
+                } else {
+                    status.innerText = "Error: " + result.error;
+                    status.style.color = "red";
+                }
+            } catch (err) {
+                status.innerText = "Connection failed.";
+                status.style.color = "red";
+            }
         }
-    } catch (err) {
-        status.innerText = "Connection failed.";
-    }
-}
+    </script>
+</body>
+</html>

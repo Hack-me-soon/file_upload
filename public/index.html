@@ -1,0 +1,26 @@
+async function uploadToServer() {
+    if (!selectedFile) return;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    status.innerText = "Uploading to GitHub...";
+
+    try {
+        // Netlify maps functions to this specific path
+        const response = await fetch('/.netlify/functions/upload', { 
+            method: 'POST', 
+            body: formData 
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            status.innerText = "Successfully saved in 'Uploaded_files'!";
+            status.style.color = "green";
+        } else {
+            status.innerText = "Error: " + result.error;
+        }
+    } catch (err) {
+        status.innerText = "Connection failed.";
+    }
+}

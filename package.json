@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "lambda-multipart-parser": "^1.0.1"
+  }
+}

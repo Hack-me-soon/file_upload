@@ -19,50 +19,92 @@
     <div id="status"></div>
 
     <script>
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('fileInput');
-        const status = document.getElementById('status');
-        let selectedFile = null;
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('fileInput');
+    const status = document.getElementById('status');
+    let selectedFile = null;
 
-        dropZone.onclick = () => fileInput.click();
-        fileInput.onchange = (e) => {
-            selectedFile = e.target.files[0];
-            dropZone.innerText = `Ready: ${selectedFile.name}`;
-        };
+    // 1. Click to select (standard)
+    dropZone.onclick = () => fileInput.click();
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
 
-        window.addEventListener('keydown', async (e) => {
-            if (e.key === 'Enter' && selectedFile) {
-                uploadToServer();
+    // 2. Handle File Selection Logic
+    function handleFile(file) {
+        if (!file) return;
+        selectedFile = file;
+        dropZone.innerText = `Ready to Upload: ${file.name}`;
+        dropZone.style.borderColor = "#28a745"; // Green border when loaded
+        status.innerText = "File selected. Press 'Enter' to save.";
+    }
+
+    // 3. GLOBAL DRAG & DROP (The "Anywhere on Page" fix)
+    // Prevent browser from just opening the file
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        window.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
+    });
+
+    // Visual feedback when dragging over the window
+    window.addEventListener('dragover', () => {
+        dropZone.style.background = "#e1edff";
+        dropZone.innerText = "Drop it anywhere!";
+    });
+
+    window.addEventListener('dragleave', () => {
+        dropZone.style.background = "white";
+    });
+
+    window.addEventListener('drop', (e) => {
+        dropZone.style.background = "white";
+        const dt = e.dataTransfer;
+        const file = dt.files[0];
+        handleFile(file);
+    });
+
+    // 4. Keyboard Listener (Enter Key)
+    window.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+            if (!selectedFile) {
+                status.innerText = "❌ Select a file first!";
+                status.style.color = "red";
+                return;
             }
-        });
+            uploadToServer();
+        }
+    });
 
-        async function uploadToServer() {
-            if (!selectedFile) return;
+    async function uploadToServer() {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
 
-            const formData = new FormData();
-            formData.append('file', selectedFile);
+        status.innerText = "🚀 Uploading to GitHub...";
+        status.style.color = "blue";
 
-            status.innerText = "Uploading to GitHub...";
-
-            try {
-                const response = await fetch('/.netlify/functions/upload', { 
-                    method: 'POST', 
-                    body: formData 
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    status.innerText = "✓ Successfully saved in 'Uploaded_files'!";
-                    status.style.color = "green";
-                } else {
-                    status.innerText = "Error: " + result.error;
-                    status.style.color = "red";
-                }
-            } catch (err) {
-                status.innerText = "Connection failed.";
+        try {
+            const response = await fetch('/.netlify/functions/upload', { 
+                method: 'POST', 
+                body: formData 
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                status.innerText = "✅ Successfully saved in 'Uploaded_files'!";
+                status.style.color = "green";
+                // Reset for next upload
+                selectedFile = null;
+                dropZone.innerText = "Drag & Drop or Click to Select";
+                dropZone.style.borderColor = "#4A90E2";
+            } else {
+                status.innerText = "❌ Error: " + result.error;
                 status.style.color = "red";
             }
+        } catch (err) {
+            status.innerText = "❌ Connection failed.";
+            status.style.color = "red";
         }
-    </script>
+    }
+</script>
 </body>
 </html>

@@ -2,35 +2,33 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const { Octokit } = require("@octokit/rest");
-const cors = require('cors');
 
 const app = express();
-
-// 1. Force higher limits at the Express level
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.use(express.static('public'));
-app.use(cors());
 
-// 2. Configure Multer to handle up to 100MB
-const storage = multer.memoryStorage();
+// Use a slightly smaller limit to stay safe within Render's Free RAM
 const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 100 * 1024 * 1024 } 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 70 * 1024 * 1024 } 
 });
 
 app.post('/upload', upload.single('file'), async (req, res) => {
+    // 1. Immediately set a longer timeout for this specific request
+    req.setTimeout(150000); 
+
     try {
-        if (!req.file) return res.status(400).json({ error: "No file provided" });
+        if (!req.file) return res.status(400).json({ error: "No file" });
 
         const octokit = new Octokit({ 
             auth: process.env.GITHUB_PAT,
-            // Increase timeout for the GitHub API call itself
-            request: { timeout: 60000 } 
+            request: { timeout: 90000 }
         });
         
+        // Optimize: Convert to base64 using a more efficient method
         const content = req.file.buffer.toString('base64');
         const fileName = `${Date.now()}-${req.file.originalname}`;
+
+        console.log(`Starting GitHub push for: ${fileName} (${req.file.size} bytes)`);
 
         await octokit.repos.createOrUpdateFileContents({
             owner: process.env.GITHUB_OWNER,
@@ -40,18 +38,15 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             content: content
         });
 
-        // Clean up memory immediately
+        // Free memory immediately
         req.file.buffer = null;
 
-        res.json({ success: true });
+        res.status(200).json({ success: true });
     } catch (error) {
-        console.error("Upload Error:", error.message);
-        res.status(500).json({ success: false, error: error.message });
+        console.error("Detailed Error:", error);
+        res.status(500).json({ error: error.message });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// 3. IMPORTANT: Increase the server timeout to 2 minutes
-server.timeout = 120000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -85,6 +85,7 @@
                 const file = selectedFiles[i];
                 const item = fileListDisplay.children[i];
                 const progressSpan = item.querySelector('.progress');
+                await new Promise(r => setTimeout(r, 2000)); // 2 second break between files
 
                 try {
                     await new Promise((resolve, reject) => {

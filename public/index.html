@@ -121,48 +121,56 @@
         });
 
         async function uploadAllFiles() {
-            const filesToUpload = [...selectedFiles];
-            selectedFiles = []; 
-            status.innerText = "Starting sequential upload...";
+    const filesToUpload = [...selectedFiles];
+    selectedFiles = []; 
+    status.innerText = "Starting sequential upload...";
 
-            for (let i = 0; i < filesToUpload.length; i++) {
-                const file = filesToUpload[i];
-                const item = fileListDisplay.children[i];
-                const progressSpan = item.querySelector('.progress');
+    for (let i = 0; i < filesToUpload.length; i++) {
+        const file = filesToUpload[i];
+        const item = fileListDisplay.children[i];
+        const progressSpan = item.querySelector('.progress');
 
-                try {
-                progressSpan.innerText = "Processing...";
-                
-                await new Promise((resolve, reject) => {
-                    const xhr = new XMLHttpRequest();
-                    const formData = new FormData();
-                    formData.append('file', file);
+        try {
+            progressSpan.innerText = "In Queue...";
+            
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
+                formData.append('file', file);
 
-                    xhr.onreadystatechange = () => {
-                        if (xhr.readyState === 4) {
-                            // If status is 0, it means the server restarted/crashed
-                            if (xhr.status === 200) resolve();
-                            else reject(new Error("Server restarted or timed out"));
-                        }
-                    };
-
-                    xhr.open('POST', '/upload', true);
-                    xhr.timeout = 240000; 
-                    xhr.send(formData);
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        progressSpan.innerText = percent < 100 ? `Uploading: ${percent}%` : "Processing on Server...";
+                    }
                 });
 
-                progressSpan.innerText = "✅ Done";
-            } catch (err) {
-                // Check GitHub anyway, the server might have finished before the restart!
-                progressSpan.innerText = "⚠️ Check GitHub (Server Restarted)";
-                progressSpan.style.color = "orange";
-            }
+                xhr.onreadystatechange = () => {
+                    if (xhr.readyState === 4) {
+                        if (xhr.status === 200) resolve();
+                        else reject(new Error("Server busy or crashed"));
+                    }
+                };
 
-            // ALWAYS wait 10 seconds before the next file to let the server recover
-            await new Promise(r => setTimeout(r, 10000));
-            }
-            status.innerText = "Batch complete.";
+                xhr.open('POST', '/upload', true);
+                xhr.timeout = 240000; // 4 minute wait
+                xhr.send(formData);
+            });
+
+            progressSpan.innerText = "✅ Done";
+            progressSpan.style.color = "green";
+            
+            // CRITICAL: Wait 5 seconds to let Render clear its memory
+            status.innerText = "Waiting for server to clear RAM...";
+            await new Promise(r => setTimeout(r, 5000));
+
+        } catch (err) {
+            progressSpan.innerText = "❌ Failed: " + err.message;
+            progressSpan.style.color = "red";
         }
+    }
+    status.innerText = "Batch complete.";
+}
     </script>
 </body>
 </html>

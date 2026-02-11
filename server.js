@@ -9,48 +9,63 @@ const app = express();
 app.use(express.static('public'));
 
 app.post('/upload', (req, res) => {
-    const form = new formidable.IncomingForm({
-        maxFileSize: 100 * 1024 * 1024, // 100MB
-        keepExtensions: true,
-        uploadDir: '/tmp' // Stream directly to disk
-    });
+    const form = new formidable.IncomingForm({ maxFileSize: 100 * 1024 * 1024, uploadDir: '/tmp' });
 
     form.parse(req, async (err, fields, files) => {
         if (err) return res.status(500).json({ error: "Stream error" });
-
-        const file = files.file[0]; // Formidable v3 syntax
+        const file = files.file[0];
         const tempPath = file.filepath;
 
         try {
-            console.log(`📡 Stream Complete: ${file.originalFilename}. Encoding...`);
-            
-            const octokit = new Octokit({ 
-                auth: process.env.GITHUB_PAT,
-                request: { timeout: 120000 }
+            res.status(200).json({ success: true, message: "Large file processing started..." });
+
+            const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
+            const owner = process.env.GITHUB_OWNER;
+            const repo = process.env.GITHUB_REPO;
+
+            // 1. Create a Blob (This handles larger files than the standard 'contents' API)
+            console.log("Step 1: Creating Blob...");
+            const { data: blob } = await octokit.git.createBlob({
+                owner, repo,
+                content: fs.readFileSync(tempPath, { encoding: 'base64' }),
+                encoding: 'base64'
             });
 
-            // Convert to Base64 (The RAM-heavy part)
-            const content = fs.readFileSync(tempPath, { encoding: 'base64' });
-            const gitPath = `Uploaded_files/${Date.now()}-${file.originalFilename}`;
+            // 2. Get the latest commit SHA of the main branch
+            const { data: ref } = await octokit.git.getRef({ owner, repo, ref: 'heads/main' });
+            const latestCommitSha = ref.object.sha;
 
-            console.log("🚀 Pushing to GitHub... (This is where the 30s timeout usually hits)");
-
-            await octokit.repos.createOrUpdateFileContents({
-                owner: process.env.GITHUB_OWNER,
-                repo: process.env.GITHUB_REPO,
-                path: gitPath,
-                message: `Stream Upload: ${file.originalFilename}`,
-                content: content
+            // 3. Create a Tree with your new file
+            console.log("Step 2: Creating Tree...");
+            const { data: tree } = await octokit.git.createTree({
+                owner, repo,
+                base_tree: latestCommitSha,
+                tree: [{
+                    path: `Uploaded_files/${Date.now()}-${file.originalFilename}`,
+                    mode: '100644', // Normal file
+                    type: 'blob',
+                    sha: blob.sha
+                }]
             });
 
-            console.log("✅ GitHub Success!");
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            res.status(200).json({ success: true });
+            // 4. Create a Commit
+            console.log("Step 3: Creating Commit...");
+            const { data: commit } = await octokit.git.createCommit({
+                owner, repo,
+                message: `Large Upload: ${file.originalFilename}`,
+                tree: tree.sha,
+                parents: [latestCommitSha]
+            });
+
+            // 5. Update the reference
+            await octokit.git.updateRef({ owner, repo, ref: 'heads/main', sha: commit.sha });
+
+            console.log("✅ Successfully pushed large file via Git Data API!");
+            fs.unlinkSync(tempPath);
 
         } catch (error) {
-            console.error("❌ Process Failed:", error.message);
+            console.error("❌ Git Data API Error:", error.message);
             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            if (!res.headersSent) res.status(500).json({ error: error.message });
         }
     });
 });

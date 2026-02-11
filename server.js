@@ -13,7 +13,10 @@ const GITHUB_URL = `https://github.com/${process.env.GITHUB_OWNER}/${process.env
 const REPO_DIR = path.join('/tmp', 'repo-clone');
 
 app.post('/upload', (req, res) => {
-    const form = new formidable.IncomingForm({ maxFileSize: 100 * 1024 * 1024 });
+    const form = new formidable.IncomingForm({ 
+        maxFileSize: 100 * 1024 * 1024, // 100MB
+        uploadDir: '/tmp' 
+    });
 
     form.parse(req, async (err, fields, files) => {
         if (err) return res.status(500).json({ error: "Upload failed" });
@@ -23,10 +26,10 @@ app.post('/upload', (req, res) => {
         const targetDir = path.join(REPO_DIR, 'Uploaded_files');
 
         try {
-            // 1. Tell browser we started
-            res.status(200).json({ success: true, message: "Git Protocol Push Started..." });
+            // Respond 202 to the browser so the UI stays alive
+            res.status(202).json({ success: true });
 
-            // 2. Clean and Clone the repo (shallow clone to save RAM)
+            // Clean previous attempts and clone
             await fs.remove(REPO_DIR);
             await git.clone({
                 fs, http, dir: REPO_DIR,
@@ -35,30 +38,29 @@ app.post('/upload', (req, res) => {
                 onAuth: () => ({ username: process.env.GITHUB_PAT })
             });
 
-            // 3. Move file into the cloned repo
+            // Move file to repo folder
             await fs.ensureDir(targetDir);
             await fs.move(file.filepath, path.join(targetDir, fileName));
 
-            // 4. Git Add, Commit, and Push
+            // Git operations
             await git.add({ fs, dir: REPO_DIR, filepath: `Uploaded_files/${fileName}` });
-            
             await git.commit({
                 fs, dir: REPO_DIR,
-                message: `Git Push: ${fileName}`,
-                author: { name: 'Uploader AI', email: 'uploader@render.com' }
+                message: `Upload: ${fileName}`,
+                author: { name: 'Render Bot', email: 'bot@render.com' }
             });
 
-            console.log("🚀 Starting Git Protocol Push...");
             await git.push({
                 fs, http, dir: REPO_DIR,
                 onAuth: () => ({ username: process.env.GITHUB_PAT })
             });
 
-            console.log("✅ Git Protocol Push Successful!");
+            console.log(`✅ ${fileName} successfully pushed!`);
         } catch (error) {
-            console.error("❌ Git Protocol Error:", error.message);
+            console.error("❌ Git Error:", error.message);
         }
     });
 });
 
-app.listen(3000, () => console.log('Server running on 3000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

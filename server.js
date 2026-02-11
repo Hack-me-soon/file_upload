@@ -1,74 +1,64 @@
 require('dotenv').config();
 const express = require('express');
 const formidable = require('formidable');
-const { Octokit } = require("@octokit/rest");
-const fs = require('fs');
+const git = require('isomorphic-git');
+const http = require('isomorphic-git/http/node');
+const fs = require('fs-extra');
 const path = require('path');
 
 const app = express();
 app.use(express.static('public'));
 
+const GITHUB_URL = `https://github.com/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}.git`;
+const REPO_DIR = path.join('/tmp', 'repo-clone');
+
 app.post('/upload', (req, res) => {
-    const form = new formidable.IncomingForm({ maxFileSize: 100 * 1024 * 1024, uploadDir: '/tmp' });
+    const form = new formidable.IncomingForm({ maxFileSize: 100 * 1024 * 1024 });
 
     form.parse(req, async (err, fields, files) => {
-        if (err) return res.status(500).json({ error: "Stream error" });
+        if (err) return res.status(500).json({ error: "Upload failed" });
+        
         const file = files.file[0];
-        const tempPath = file.filepath;
+        const fileName = `${Date.now()}-${file.originalFilename}`;
+        const targetDir = path.join(REPO_DIR, 'Uploaded_files');
 
         try {
-            res.status(200).json({ success: true, message: "Large file processing started..." });
+            // 1. Tell browser we started
+            res.status(200).json({ success: true, message: "Git Protocol Push Started..." });
 
-            const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
-            const owner = process.env.GITHUB_OWNER;
-            const repo = process.env.GITHUB_REPO;
-
-            // 1. Create a Blob (This handles larger files than the standard 'contents' API)
-            console.log("Step 1: Creating Blob...");
-            const { data: blob } = await octokit.git.createBlob({
-                owner, repo,
-                content: fs.readFileSync(tempPath, { encoding: 'base64' }),
-                encoding: 'base64'
+            // 2. Clean and Clone the repo (shallow clone to save RAM)
+            await fs.remove(REPO_DIR);
+            await git.clone({
+                fs, http, dir: REPO_DIR,
+                url: GITHUB_URL,
+                singleBranch: true, depth: 1,
+                onAuth: () => ({ username: process.env.GITHUB_PAT })
             });
 
-            // 2. Get the latest commit SHA of the main branch
-            const { data: ref } = await octokit.git.getRef({ owner, repo, ref: 'heads/main' });
-            const latestCommitSha = ref.object.sha;
+            // 3. Move file into the cloned repo
+            await fs.ensureDir(targetDir);
+            await fs.move(file.filepath, path.join(targetDir, fileName));
 
-            // 3. Create a Tree with your new file
-            console.log("Step 2: Creating Tree...");
-            const { data: tree } = await octokit.git.createTree({
-                owner, repo,
-                base_tree: latestCommitSha,
-                tree: [{
-                    path: `Uploaded_files/${Date.now()}-${file.originalFilename}`,
-                    mode: '100644', // Normal file
-                    type: 'blob',
-                    sha: blob.sha
-                }]
+            // 4. Git Add, Commit, and Push
+            await git.add({ fs, dir: REPO_DIR, filepath: `Uploaded_files/${fileName}` });
+            
+            await git.commit({
+                fs, dir: REPO_DIR,
+                message: `Git Push: ${fileName}`,
+                author: { name: 'Uploader AI', email: 'uploader@render.com' }
             });
 
-            // 4. Create a Commit
-            console.log("Step 3: Creating Commit...");
-            const { data: commit } = await octokit.git.createCommit({
-                owner, repo,
-                message: `Large Upload: ${file.originalFilename}`,
-                tree: tree.sha,
-                parents: [latestCommitSha]
+            console.log("🚀 Starting Git Protocol Push...");
+            await git.push({
+                fs, http, dir: REPO_DIR,
+                onAuth: () => ({ username: process.env.GITHUB_PAT })
             });
 
-            // 5. Update the reference
-            await octokit.git.updateRef({ owner, repo, ref: 'heads/main', sha: commit.sha });
-
-            console.log("✅ Successfully pushed large file via Git Data API!");
-            fs.unlinkSync(tempPath);
-
+            console.log("✅ Git Protocol Push Successful!");
         } catch (error) {
-            console.error("❌ Git Data API Error:", error.message);
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            console.error("❌ Git Protocol Error:", error.message);
         }
     });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server live on ${PORT}`));
+app.listen(3000, () => console.log('Server running on 3000'));

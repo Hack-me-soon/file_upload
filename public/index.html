@@ -2,33 +2,73 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>GitHub Multi-Uploader</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Protocol Uploader</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; background: #f4f4f9; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            padding: 50px; 
+            background: #f4f7f9; 
+            color: #333;
+        }
+        h2 { color: #2c3e50; }
         #drop-zone { 
-            width: 400px; height: 150px; border: 3px dashed #4A90E2; 
-            border-radius: 10px; display: flex; align-items: center; 
-            justify-content: center; background: white; cursor: pointer;
+            width: 450px; 
+            height: 180px; 
+            border: 3px dashed #4A90E2; 
+            border-radius: 15px; 
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center; 
+            background: white; 
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            padding: 10px;
         }
-        #file-list { margin-top: 20px; width: 400px; }
+        #drop-zone:hover { background: #edf2f7; border-color: #357abd; }
+        #file-list { margin-top: 25px; width: 450px; }
         .file-item { 
-            background: #eee; margin: 5px 0; padding: 8px; 
-            border-radius: 4px; font-size: 0.9em; display: flex; justify-content: space-between;
+            background: #ffffff; 
+            margin: 8px 0; 
+            padding: 12px; 
+            border-radius: 8px; 
+            font-size: 0.9em; 
+            display: flex; 
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-left: 4px solid #4A90E2;
         }
-        #status { margin-top: 20px; font-weight: bold; }
-        .progress { color: #666; font-size: 0.8em; }
+        #status { 
+            margin-top: 25px; 
+            font-weight: 600; 
+            color: #555;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .progress { font-weight: bold; color: #4A90E2; }
+        .kb-info { font-size: 0.8em; color: #888; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <h2>Multi-File Uploader</h2>
-    <div id="drop-zone">Drag & Drop Multiple Files or Click</div>
+    <h2>Multi-File Git Uploader</h2>
+    <div id="drop-zone">
+        <strong>Drag & Drop Files Here</strong>
+        <span>or click to browse</span>
+        <div class="kb-info">(Up to 100MB per file)</div>
+    </div>
+    
     <input type="file" id="fileInput" multiple hidden>
     
     <div id="file-list"></div>
     
-    <p>Press <strong>Enter</strong> to upload all files</p>
-    <div id="status"></div>
+    <p style="margin-top:20px;">Press <strong>Enter</strong> to start the Git Push</p>
+    <div id="status">No files selected</div>
 
     <script>
         const dropZone = document.getElementById('drop-zone');
@@ -38,11 +78,10 @@
         
         let selectedFiles = [];
 
+        // Interaction Listeners
         dropZone.onclick = () => fileInput.click();
-        
         fileInput.onchange = (e) => handleFiles(e.target.files);
 
-        // Global Drag Listeners
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
             window.addEventListener(name, (e) => {
                 e.preventDefault();
@@ -55,20 +94,24 @@
         });
 
         function handleFiles(files) {
-            // Convert FileList to Array and add to our selection
             const newFiles = Array.from(files);
             selectedFiles = [...selectedFiles, ...newFiles];
             renderFileList();
         }
 
         function renderFileList() {
+            if (selectedFiles.length === 0) {
+                fileListDisplay.innerHTML = "";
+                status.innerText = "No files selected";
+                return;
+            }
             fileListDisplay.innerHTML = selectedFiles.map((f, i) => `
                 <div class="file-item">
-                    <span>${f.name}</span>
-                    <span class="progress">Ready</span>
+                    <span>${f.name} <small>(${(f.size / (1024*1024)).toFixed(2)} MB)</small></span>
+                    <span class="progress" id="prog-${i}">Ready</span>
                 </div>
             `).join('');
-            status.innerText = `${selectedFiles.length} files selected.`;
+            status.innerText = `${selectedFiles.length} files prepared for upload.`;
         }
 
         window.addEventListener('keydown', async (e) => {
@@ -78,14 +121,17 @@
         });
 
         async function uploadAllFiles() {
-            const total = selectedFiles.length;
-            status.innerText = `Starting upload of ${total} files...`;
+            const filesToUpload = [...selectedFiles]; // Snapshot
+            selectedFiles = []; // Clear current selection
+            status.innerText = "Processing queue...";
+            status.style.background = "#e1effe";
 
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const file = selectedFiles[i];
-                const item = fileListDisplay.children[i];
-                const progressSpan = item.querySelector('.progress');
-                await new Promise(r => setTimeout(r, 2000)); // 2 second break between files
+            for (let i = 0; i < filesToUpload.length; i++) {
+                const file = filesToUpload[i];
+                const progressSpan = document.getElementById(`prog-${i}`);
+                
+                // 2 second cooldown for server RAM/Garbage Collection
+                if (i > 0) await new Promise(r => setTimeout(r, 2000)); 
 
                 try {
                     await new Promise((resolve, reject) => {
@@ -93,36 +139,45 @@
                         const formData = new FormData();
                         formData.append('file', file);
 
-                        // Track Progress
                         xhr.upload.addEventListener('progress', (e) => {
                             if (e.lengthComputable) {
                                 const percent = Math.round((e.loaded / e.total) * 100);
                                 progressSpan.innerText = `Uploading: ${percent}%`;
+                                if (percent === 100) {
+                                    progressSpan.innerText = "Syncing with Git...";
+                                    progressSpan.style.color = "#f39c12";
+                                }
                             }
                         });
 
                         xhr.onreadystatechange = () => {
                             if (xhr.readyState === 4) {
-                                if (xhr.status === 200) resolve();
-                                else reject(new Error("Upload failed with status " + xhr.status));
+                                if (xhr.status === 200 || xhr.status === 202) resolve();
+                                else reject(new Error(`Server error: ${xhr.status}`));
                             }
                         };
 
+                        xhr.onerror = () => reject(new Error("Network connection failed."));
+                        
+                        // 3 minute timeout for large Git Protocol operations
+                        xhr.timeout = 180000; 
+                        xhr.ontimeout = () => reject(new Error("Request timed out (3 mins)."));
+
                         xhr.open('POST', '/upload', true);
-                        // Before xhr.send(formData);
-                        xhr.timeout = 180000; // Tell the browser to wait 3 minutes
                         xhr.send(formData);
                     });
 
                     progressSpan.innerText = "✅ Done";
-                    progressSpan.style.color = "green";
+                    progressSpan.style.color = "#27ae60";
+
                 } catch (err) {
-                    progressSpan.innerText = "❌ Failed: " + err.message;
-                    progressSpan.style.color = "red";
+                    console.error(err);
+                    progressSpan.innerText = "❌ Failed";
+                    progressSpan.style.color = "#c0392b";
                 }
             }
-            status.innerText = "All processing finished.";
-            selectedFiles = [];
+            status.innerText = "All uploads completed. Check your GitHub repo!";
+            status.style.background = "#d4edda";
         }
     </script>
 </body>

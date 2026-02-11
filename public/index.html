@@ -2,128 +2,110 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub Private Uploader</title>
+    <title>GitHub Multi-Uploader</title>
     <style>
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            display: flex; flex-direction: column; align-items: center; 
-            justify-content: center; min-height: 100vh; margin: 0;
-            background: #f0f2f5; color: #333;
-        }
-        h2 { margin-bottom: 10px; color: #1a1a1a; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 50px; background: #f4f4f9; }
         #drop-zone { 
-            width: 400px; height: 250px; border: 3px dashed #4A90E2; 
-            border-radius: 15px; display: flex; flex-direction: column;
-            align-items: center; justify-content: center; 
-            background: white; cursor: pointer; transition: all 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            text-align: center; padding: 20px;
+            width: 400px; height: 150px; border: 3px dashed #4A90E2; 
+            border-radius: 10px; display: flex; align-items: center; 
+            justify-content: center; background: white; cursor: pointer;
         }
-        #drop-zone.active { background: #e1edff; border-color: #007AFF; transform: scale(1.02); }
-        #status { margin-top: 25px; font-weight: 600; font-size: 1.1rem; min-height: 1.5em; }
-        .hint { margin-top: 15px; font-size: 0.9rem; color: #666; }
-        strong { color: #007AFF; }
+        #file-list { margin-top: 20px; width: 400px; }
+        .file-item { 
+            background: #eee; margin: 5px 0; padding: 8px; 
+            border-radius: 4px; font-size: 0.9em; display: flex; justify-content: space-between;
+        }
+        #status { margin-top: 20px; font-weight: bold; }
+        .progress { color: #666; font-size: 0.8em; }
     </style>
 </head>
 <body>
 
-    <h2>Secure GitHub Storage</h2>
-    <div id="drop-zone" id="dropZone">
-        <span id="drop-text">Drag & Drop anywhere <br> or Click to Select</span>
-    </div>
-    <input type="file" id="fileInput" hidden>
+    <h2>Multi-File Uploader</h2>
+    <div id="drop-zone">Drag & Drop Multiple Files or Click</div>
+    <input type="file" id="fileInput" multiple hidden>
     
-    <p class="hint">Press <strong>Enter</strong> to save to the "Uploaded_files" folder</p>
+    <div id="file-list"></div>
+    
+    <p>Press <strong>Enter</strong> to upload all files</p>
     <div id="status"></div>
 
     <script>
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('fileInput');
+        const fileListDisplay = document.getElementById('file-list');
         const status = document.getElementById('status');
-        const dropText = document.getElementById('drop-text');
-        let selectedFile = null;
-        let dragCounter = 0;
+        
+        let selectedFiles = [];
 
-        // File Selection Logic
         dropZone.onclick = () => fileInput.click();
-        fileInput.onchange = (e) => handleFile(e.target.files[0]);
+        
+        fileInput.onchange = (e) => handleFiles(e.target.files);
 
-        function handleFile(file) {
-            if (!file) return;
-            selectedFile = file;
-            dropText.innerHTML = `<strong>File Ready:</strong><br>${file.name}`;
-            dropZone.style.borderColor = "#28a745";
-            status.innerText = "Ready! Press Enter to upload.";
-            status.style.color = "#333";
-        }
-
-        // Global Drag & Drop Listeners
+        // Global Drag Listeners
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
             window.addEventListener(name, (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-            }, false);
-        });
-
-        window.addEventListener('dragenter', () => {
-            dragCounter++;
-            dropZone.classList.add('active');
-            if (!selectedFile) dropText.innerText = "Drop it now!";
-        });
-
-        window.addEventListener('dragleave', () => {
-            dragCounter--;
-            if (dragCounter === 0) dropZone.classList.remove('active');
+            });
         });
 
         window.addEventListener('drop', (e) => {
-            dragCounter = 0;
-            dropZone.classList.remove('active');
-            handleFile(e.dataTransfer.files[0]);
+            handleFiles(e.dataTransfer.files);
         });
 
-        // Enter Key Listener
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                if (!selectedFile) {
-                    status.innerText = "⚠️ Please select a file first.";
-                    status.style.color = "#d9534f";
-                    return;
-                }
-                uploadToServer();
+        function handleFiles(files) {
+            // Convert FileList to Array and add to our selection
+            const newFiles = Array.from(files);
+            selectedFiles = [...selectedFiles, ...newFiles];
+            renderFileList();
+        }
+
+        function renderFileList() {
+            fileListDisplay.innerHTML = selectedFiles.map((f, i) => `
+                <div class="file-item">
+                    <span>${f.name}</span>
+                    <span class="progress">Ready</span>
+                </div>
+            `).join('');
+            status.innerText = `${selectedFiles.length} files selected.`;
+        }
+
+        window.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && selectedFiles.length > 0) {
+                uploadAllFiles();
             }
         });
 
-        async function uploadToServer() {
-            const formData = new FormData();
-            formData.append('file', selectedFile);
+        async function uploadAllFiles() {
+            const total = selectedFiles.length;
+            status.innerText = `Starting upload of ${total} files...`;
 
-            status.innerText = "📤 Uploading to GitHub...";
-            status.style.color = "#007AFF";
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const formData = new FormData();
+                formData.append('file', file);
 
-            try {
-                const response = await fetch('/upload', { 
-                    method: 'POST', 
-                    body: formData 
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    status.innerText = "✅ Successfully saved!";
-                    status.style.color = "#28a745";
-                    // Reset
-                    selectedFile = null;
-                    dropText.innerHTML = "Drag & Drop anywhere <br> or Click to Select";
-                    dropZone.style.borderColor = "#4A90E2";
-                } else {
-                    status.innerText = "❌ Error: " + result.error;
-                    status.style.color = "#d9534f";
+                const item = fileListDisplay.children[i];
+                item.querySelector('.progress').innerText = "Uploading...";
+
+                try {
+                    const response = await fetch('/upload', { method: 'POST', body: formData });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        item.querySelector('.progress').innerText = "✅ Done";
+                        item.querySelector('.progress').style.color = "green";
+                    } else {
+                        throw new Error(result.error);
+                    }
+                } catch (err) {
+                    item.querySelector('.progress').innerText = "❌ Failed";
+                    item.querySelector('.progress').style.color = "red";
                 }
-            } catch (err) {
-                status.innerText = "❌ Connection failed.";
-                status.style.color = "#d9534f";
             }
+            status.innerText = "All processing finished.";
+            selectedFiles = []; // Clear after attempt
         }
     </script>
 </body>

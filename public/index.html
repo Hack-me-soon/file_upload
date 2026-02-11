@@ -121,19 +121,18 @@
         });
 
         async function uploadAllFiles() {
-            const filesToUpload = [...selectedFiles]; // Snapshot
-            selectedFiles = []; // Clear current selection
-            status.innerText = "Processing queue...";
-            status.style.background = "#e1effe";
+            const filesToUpload = [...selectedFiles];
+            selectedFiles = []; 
+            status.innerText = "Starting sequential upload...";
 
             for (let i = 0; i < filesToUpload.length; i++) {
                 const file = filesToUpload[i];
-                const progressSpan = document.getElementById(`prog-${i}`);
-                
-                // 2 second cooldown for server RAM/Garbage Collection
-                if (i > 0) await new Promise(r => setTimeout(r, 2000)); 
+                const item = fileListDisplay.children[i];
+                const progressSpan = item.querySelector('.progress');
 
                 try {
+                    progressSpan.innerText = "In Queue...";
+                    
                     await new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
                         const formData = new FormData();
@@ -142,42 +141,35 @@
                         xhr.upload.addEventListener('progress', (e) => {
                             if (e.lengthComputable) {
                                 const percent = Math.round((e.loaded / e.total) * 100);
-                                progressSpan.innerText = `Uploading: ${percent}%`;
-                                if (percent === 100) {
-                                    progressSpan.innerText = "Syncing with Git...";
-                                    progressSpan.style.color = "#f39c12";
-                                }
+                                progressSpan.innerText = percent < 100 ? `Uploading: ${percent}%` : "Processing on Server...";
                             }
                         });
 
                         xhr.onreadystatechange = () => {
                             if (xhr.readyState === 4) {
-                                if (xhr.status === 200 || xhr.status === 202) resolve();
-                                else reject(new Error(`Server error: ${xhr.status}`));
+                                if (xhr.status === 200) resolve();
+                                else reject(new Error("Server busy or crashed"));
                             }
                         };
 
-                        xhr.onerror = () => reject(new Error("Network connection failed."));
-                        
-                        // 3 minute timeout for large Git Protocol operations
-                        xhr.timeout = 180000; 
-                        xhr.ontimeout = () => reject(new Error("Request timed out (3 mins)."));
-
                         xhr.open('POST', '/upload', true);
+                        xhr.timeout = 240000; // 4 minute wait
                         xhr.send(formData);
                     });
 
                     progressSpan.innerText = "✅ Done";
-                    progressSpan.style.color = "#27ae60";
+                    progressSpan.style.color = "green";
+                    
+                    // CRITICAL: Wait 5 seconds to let Render clear its memory
+                    status.innerText = "Waiting for server to clear RAM...";
+                    await new Promise(r => setTimeout(r, 5000));
 
                 } catch (err) {
-                    console.error(err);
-                    progressSpan.innerText = "❌ Failed";
-                    progressSpan.style.color = "#c0392b";
+                    progressSpan.innerText = "❌ Failed: " + err.message;
+                    progressSpan.style.color = "red";
                 }
             }
-            status.innerText = "All uploads completed. Check your GitHub repo!";
-            status.style.background = "#d4edda";
+            status.innerText = "Batch complete.";
         }
     </script>
 </body>

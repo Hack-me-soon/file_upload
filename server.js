@@ -13,22 +13,19 @@ const upload = multer({
 });
 
 app.post('/upload', upload.single('file'), async (req, res) => {
-    // 1. Immediately set a longer timeout for this specific request
-    req.setTimeout(150000); 
-
     try {
         if (!req.file) return res.status(400).json({ error: "No file" });
 
-        const octokit = new Octokit({ 
-            auth: process.env.GITHUB_PAT,
-            request: { timeout: 90000 }
-        });
-        
-        // Optimize: Convert to base64 using a more efficient method
+        // 1. Send an IMMEDIATE response to the browser
+        // This prevents the 502 timeout because the connection "finishes" successfully
+        res.status(202).json({ success: true, message: "Upload started in background" });
+
+        // 2. Now do the heavy lifting in the background
+        const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
         const content = req.file.buffer.toString('base64');
         const fileName = `${Date.now()}-${req.file.originalname}`;
 
-        console.log(`Starting GitHub push for: ${fileName} (${req.file.size} bytes)`);
+        console.log(`Processing ${fileName} in background...`);
 
         await octokit.repos.createOrUpdateFileContents({
             owner: process.env.GITHUB_OWNER,
@@ -38,13 +35,14 @@ app.post('/upload', upload.single('file'), async (req, res) => {
             content: content
         });
 
-        // Free memory immediately
+        console.log(`Successfully pushed ${fileName} to GitHub.`);
+        
+        // Cleanup
         req.file.buffer = null;
 
-        res.status(200).json({ success: true });
     } catch (error) {
-        console.error("Detailed Error:", error);
-        res.status(500).json({ error: error.message });
+        // Since the response was already sent, we just log errors to the Render console
+        console.error("Background Upload Failed:", error.message);
     }
 });
 

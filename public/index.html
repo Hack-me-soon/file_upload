@@ -83,29 +83,43 @@
 
             for (let i = 0; i < selectedFiles.length; i++) {
                 const file = selectedFiles[i];
-                const formData = new FormData();
-                formData.append('file', file);
-
                 const item = fileListDisplay.children[i];
-                item.querySelector('.progress').innerText = "Uploading...";
+                const progressSpan = item.querySelector('.progress');
 
                 try {
-                    const response = await fetch('/upload', { method: 'POST', body: formData });
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        item.querySelector('.progress').innerText = "✅ Done";
-                        item.querySelector('.progress').style.color = "green";
-                    } else {
-                        throw new Error(result.error);
-                    }
+                    await new Promise((resolve, reject) => {
+                        const xhr = new XMLHttpRequest();
+                        const formData = new FormData();
+                        formData.append('file', file);
+
+                        // Track Progress
+                        xhr.upload.addEventListener('progress', (e) => {
+                            if (e.lengthComputable) {
+                                const percent = Math.round((e.loaded / e.total) * 100);
+                                progressSpan.innerText = `Uploading: ${percent}%`;
+                            }
+                        });
+
+                        xhr.onreadystatechange = () => {
+                            if (xhr.readyState === 4) {
+                                if (xhr.status === 200) resolve();
+                                else reject(new Error("Upload failed with status " + xhr.status));
+                            }
+                        };
+
+                        xhr.open('POST', '/upload', true);
+                        xhr.send(formData);
+                    });
+
+                    progressSpan.innerText = "✅ Done";
+                    progressSpan.style.color = "green";
                 } catch (err) {
-                    item.querySelector('.progress').innerText = "❌ Failed";
-                    item.querySelector('.progress').style.color = "red";
+                    progressSpan.innerText = "❌ Failed: " + err.message;
+                    progressSpan.style.color = "red";
                 }
             }
             status.innerText = "All processing finished.";
-            selectedFiles = []; // Clear after attempt
+            selectedFiles = [];
         }
     </script>
 </body>

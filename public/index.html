@@ -109,6 +109,8 @@
                         };
 
                         xhr.open('POST', '/upload', true);
+                        // Before xhr.send(formData);
+                        xhr.timeout = 180000; // Tell the browser to wait 3 minutes
                         xhr.send(formData);
                     });
 

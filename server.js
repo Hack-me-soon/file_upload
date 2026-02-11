@@ -6,45 +6,42 @@ const { Octokit } = require("@octokit/rest");
 const app = express();
 app.use(express.static('public'));
 
-// Use a slightly smaller limit to stay safe within Render's Free RAM
+// Increase limits for the server
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
 const upload = multer({ 
     storage: multer.memoryStorage(),
-    limits: { fileSize: 70 * 1024 * 1024 } 
+    limits: { fileSize: 100 * 1024 * 1024 } 
 });
 
 app.post('/upload', upload.single('file'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ error: "No file" });
+        if (!req.file) return res.status(400).send("No file.");
 
-        // 1. Send an IMMEDIATE response to the browser
-        // This prevents the 502 timeout because the connection "finishes" successfully
-        res.status(202).json({ success: true, message: "Upload started in background" });
+        // IMPORTANT: We respond 200 immediately so the connection doesn't hang
+        res.status(200).json({ success: true, message: "Server received file." });
 
-        // 2. Now do the heavy lifting in the background
         const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
         const content = req.file.buffer.toString('base64');
-        const fileName = `${Date.now()}-${req.file.originalname}`;
+        const path = `Uploaded_files/${Date.now()}-${req.file.originalname}`;
 
-        console.log(`Processing ${fileName} in background...`);
+        console.log(`Pumping ${req.file.originalname} to GitHub...`);
 
         await octokit.repos.createOrUpdateFileContents({
             owner: process.env.GITHUB_OWNER,
             repo: process.env.GITHUB_REPO,
-            path: `Uploaded_files/${fileName}`,
-            message: `Large Upload: ${req.file.originalname}`,
+            path: path,
+            message: `Upload: ${req.file.originalname}`,
             content: content
         });
 
-        console.log(`Successfully pushed ${fileName} to GitHub.`);
-        
-        // Cleanup
-        req.file.buffer = null;
-
-    } catch (error) {
-        // Since the response was already sent, we just log errors to the Render console
-        console.error("Background Upload Failed:", error.message);
+        console.log("✅ Success!");
+        req.file.buffer = null; // Clean RAM
+    } catch (err) {
+        console.error("❌ GitHub Error:", err.message);
     }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const PORT = process.env.PORT || 8000; // Koyeb likes 8000
+app.listen(PORT, () => console.log(`Server on ${PORT}`));
